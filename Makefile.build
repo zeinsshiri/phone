@@ -1,0 +1,53 @@
+# 伪目标
+PHONY := __build
+__build:             #空操作
+ 
+# 清空需要的变量
+obj-y :=            #需要编译的目标文件列表
+subdir-y :=          #子目录列表
+EXTRA_CFLAGS :=      #额外编译选项
+ 
+# 包含同级目录Makefile
+include Makefile
+ 
+# 获取当前 Makefile 需要编译的子目录的目录名
+# obj-y := a.o b.o c/ d/
+# $(filter %/, $(obj-y))   : c/ d/
+# __subdir-y  : c d
+# subdir-y    : c d
+__subdir-y	:= $(patsubst %/,%,$(filter %/, $(obj-y)))
+subdir-y	+= $(__subdir-y)
+ 
+# 生成各子目录的目标文件列表：要编译的子目录下目标文件都打包成了dir/built-in.o
+subdir_objs := $(foreach f,$(subdir-y),$(f)/built-in.o)
+ 
+# 过滤 obj-y，得到当前目录下需要编进程序的文件名作为，并写为目标
+# a.o b.o
+cur_objs := $(filter-out %/, $(obj-y))
+# 使修改头文件 .h 后，重新make后可以重新编译（重要）
+dep_files := $(foreach f,$(cur_objs),.$(f).d)
+# 包含所有依赖文件
+dep_files := $(wildcard $(dep_files))
+ifneq ($(dep_files),)        #不为空（即存在依赖文件），则执行下一步操
+	include $(dep_files)  #Make 工具会读取这些依赖文件，从而确保 Makefile 知道源文件与头文件之间的正确依赖关系，当头文件修改后可以重新编译受影响的源文件
+endif
+
+
+PHONY += $(subdir-y)
+# 第一个目标
+__build : $(subdir-y) built-in.o
+# 优先编译 子目录的内容;-C切换到子目录执行$(TOPDIR)/Makefile.build
+$(subdir-y):
+	make -C $@ -f $(TOPDIR)/Makefile.build 
+ 
+# 把subdir的built-in.o和cur_objs链接成 总的built-in.o目标
+built-in.o : $(cur_objs) $(subdir_objs)
+	$(LD) -r -o $@ $^
+
+dep_file = .$@.d
+ 
+# 生成 cur_objs 目标
+%.o : %.c
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(CFLAGS_$@) -Wp,-MD,$(dep_file) -c -o $@ $<
+	
+.PHONY : $(PHONY)
